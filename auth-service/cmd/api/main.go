@@ -1,7 +1,7 @@
 package main
 
 import (
-	"auth/data"
+	"auth-service/data"
 	"database/sql"
 	"log"
 	"net/http"
