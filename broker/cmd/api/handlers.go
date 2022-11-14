@@ -10,11 +10,17 @@ import (
 type RequestPayload struct {
 	Action string      `json:"action"`
 	Auth   AuthPayload `json:"auth,omitempty"`
+	Log    LogPayload  `json:"log,omitempty"`
 }
 
 type AuthPayload struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type LogPayload struct {
+	Name string `json:"name"`
+	Data string `json:"data"`
 }
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +45,8 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	case "auth":
 		app.Authenticate(w, requestPayload.Auth)
 		return
+	case "log":
+		app.LogItem(w, requestPayload.Log)
 	default:
 		app.errorJSON(w, errors.New("invalid action"), http.StatusBadRequest)
 		return
@@ -94,4 +102,44 @@ func (app *Config) Authenticate(w http.ResponseWriter, a AuthPayload) {
 	payload.Data = jsonFromService.Data
 
 	app.writeJSON(w, http.StatusAccepted, payload)
+}
+
+func (app *Config) LogItem(w http.ResponseWriter, entry LogPayload) {
+	jsonData, err := json.MarshalIndent(entry, "", "  ")
+
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	req, err := http.NewRequest("POST", "http://logger-service/log", bytes.NewBuffer(jsonData))
+
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		app.errorJSON(w, errors.New("error logger service"), http.StatusInternalServerError)
+		return
+	}
+
+	var jsonFromService jsonResponse
+	jsonFromService.Error = false
+	jsonFromService.Message = "Logging successful"
+
+	app.writeJSON(w, http.StatusAccepted, jsonFromService)
 }
