@@ -11,6 +11,7 @@ type RequestPayload struct {
 	Action string      `json:"action"`
 	Auth   AuthPayload `json:"auth,omitempty"`
 	Log    LogPayload  `json:"log,omitempty"`
+	Mail   MailPayload `json:"mail,omitempty"`
 }
 
 type AuthPayload struct {
@@ -21,6 +22,13 @@ type AuthPayload struct {
 type LogPayload struct {
 	Name string `json:"name"`
 	Data string `json:"data"`
+}
+
+type MailPayload struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Subject string `json:"subject"`
+	Message string `json:"message"`
 }
 
 func (app *Config) Broker(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +52,9 @@ func (app *Config) HandleSubmission(w http.ResponseWriter, r *http.Request) {
 	switch requestPayload.Action {
 	case "auth":
 		app.Authenticate(w, requestPayload.Auth)
+		return
+	case "mail":
+		app.SendMail(w, requestPayload.Mail)
 		return
 	case "log":
 		app.LogItem(w, requestPayload.Log)
@@ -140,6 +151,46 @@ func (app *Config) LogItem(w http.ResponseWriter, entry LogPayload) {
 	var jsonFromService jsonResponse
 	jsonFromService.Error = false
 	jsonFromService.Message = "Logging successful"
+
+	app.writeJSON(w, http.StatusAccepted, jsonFromService)
+}
+
+func (app *Config) SendMail(w http.ResponseWriter, msg MailPayload) {
+	jsonData, err := json.MarshalIndent(msg, "", "  ")
+
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	req, err := http.NewRequest("POST", "http://mailer-service/send", bytes.NewBuffer(jsonData))
+
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		app.errorJSON(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		app.errorJSON(w, errors.New("error mail service"), http.StatusInternalServerError)
+		return
+	}
+
+	var jsonFromService jsonResponse
+	jsonFromService.Error = false
+	jsonFromService.Message = "Mail sent to " + msg.To
 
 	app.writeJSON(w, http.StatusAccepted, jsonFromService)
 }
